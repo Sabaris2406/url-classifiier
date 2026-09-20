@@ -1,79 +1,55 @@
-from fastapi import FastAPI, HTTPException
+import gradio as gr
 import pandas as pd
 import joblib
-import uvicorn
+import json
+import spaces  # Required by Hugging Face ZeroGPU
 
-# Import your custom class so joblib can unpickle it
+# Import custom class
 from feature_extraction import NIDSFeaturePreprocessor
 
-# 1. Load artifacts
+# Load artifacts
 model = joblib.load('nids_xgb_model.pkl')
 preprocessor = joblib.load('feature_extractor.pkl')
 
-# 2. Initialize pure API (No Gradio UI)
-app = FastAPI(title="NIDS Pure API")
-from fastapi import FastAPI, HTTPException
-import pandas as pd
-import joblib
-import uvicorn
+EXPECTED_COLS = [
+    'srcip', 'sport', 'dstip', 'dsport', 'proto', 'state', 'dur', 'sbytes', 'dbytes',
+    'sttl', 'dttl', 'sloss', 'dloss', 'service', 'sload', 'dload', 'spkts', 'dpkts',
+    'swin', 'dwin', 'stcpb', 'dtcpb', 'smeansz', 'dmeansz', 'trans_depth', 'res_bdy_len',
+    'sjit', 'djit', 'stime', 'ltime', 'sintpkt', 'dintpkt', 'tcprtt', 'synack', 'ackdat',
+    'is_sm_ips_ports', 'ct_state_ttl', 'ct_flw_http_mthd', 'is_ftp_login', 'ct_ftp_cmd',
+    'ct_srv_src', 'ct_srv_dst', 'ct_dst_ltm', 'ct_src_ltm', 'ct_src_dport_ltm',
+    'ct_dst_sport_ltm', 'ct_dst_src_ltm'
+]
 
-# Import your custom class so joblib can unpickle it
-from feature_extraction import NIDSFeaturePreprocessor
-
-# 1. Load artifacts
-model = joblib.load('nids_xgb_model.pkl')
-preprocessor = joblib.load('feature_extractor.pkl')
-
-# 2. Initialize pure API (No Gradio UI)
-app = FastAPI(title="NIDS Pure API")
-
-@app.post("/predict")
-async def predict_threat(payload: dict):
+@spaces.GPU  # This line prevents the server crash
+def predict_threat(json_text):
     try:
-        # 1. Extract the URL for the presentation
-        target_url = payload.pop('target_url', 'Unknown URL')
-
-        # 2. Format the raw JSON into a matrix
-        df_flow = pd.DataFrame([payload])
-        X_infer = preprocessor.transform(df_flow)
+        flow_data = json.loads(json_text)
+        target_url = flow_data.pop('target_url', 'Unknown URL')
         
-        # 3. AI Prediction
+        df_flow = pd.DataFrame([flow_data])
+        df_flow = df_flow[EXPECTED_COLS]
+        
+        X_infer = preprocessor.transform(df_flow)
         prediction = int(model.predict(X_infer)[0])
         confidence = float(model.predict_proba(X_infer)[0][prediction] * 100)
         
+        # Return a Python dictionary (Gradio will convert it to JSON)
         return {
             "target_url": target_url,
             "status": "Malicious" if prediction == 1 else "Normal",
             "confidence_percent": round(confidence, 2)
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return {"error": str(e)}
+
+# Build the Gradio App with JSON output
+demo = gr.Interface(
+    fn=predict_threat,
+    inputs=gr.Textbox(lines=10, label="Paste Postman JSON Payload Here"),
+    outputs=gr.JSON(label="API Response"), 
+    title="NIDS Classification API"
+)
 
 if __name__ == "__main__":
-    # Hugging Face strictly listens on port 7860
-    uvicorn.run(app, host="0.0.0.0", port=7860)
-@app.post("/predict")
-async def predict_threat(payload: dict):
-    try:
-        # 1. Extract the URL for the presentation
-        target_url = payload.pop('target_url', 'Unknown URL')
-
-        # 2. Format the raw JSON into a matrix
-        df_flow = pd.DataFrame([payload])
-        X_infer = preprocessor.transform(df_flow)
-        
-        # 3. AI Prediction
-        prediction = int(model.predict(X_infer)[0])
-        confidence = float(model.predict_proba(X_infer)[0][prediction] * 100)
-        
-        return {
-            "target_url": target_url,
-            "status": "Malicious" if prediction == 1 else "Normal",
-            "confidence_percent": round(confidence, 2)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-if __name__ == "__main__":
-    # Hugging Face strictly listens on port 7860
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    demo.launch()
