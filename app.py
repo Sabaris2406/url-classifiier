@@ -2,7 +2,7 @@ import gradio as gr
 import pandas as pd
 import joblib
 import json
-import spaces  # Required by Hugging Face ZeroGPU
+import spaces
 
 # Import custom class
 from feature_extraction import NIDSFeaturePreprocessor
@@ -21,7 +21,7 @@ EXPECTED_COLS = [
     'ct_dst_sport_ltm', 'ct_dst_src_ltm'
 ]
 
-@spaces.GPU  # This line prevents the server crash
+@spaces.GPU(duration=30)
 def predict_threat(json_text):
     try:
         flow_data = json.loads(json_text)
@@ -34,7 +34,6 @@ def predict_threat(json_text):
         prediction = int(model.predict(X_infer)[0])
         confidence = float(model.predict_proba(X_infer)[0][prediction] * 100)
         
-        # Return a Python dictionary (Gradio will convert it to JSON)
         return {
             "target_url": target_url,
             "status": "Malicious" if prediction == 1 else "Normal",
@@ -47,7 +46,7 @@ def predict_threat(json_text):
 demo = gr.Interface(
     fn=predict_threat,
     inputs=gr.Textbox(lines=10, label="Paste Postman JSON Payload Here"),
-    outputs=gr.JSON(label="API Response"), 
+    outputs=gr.JSON(label="API Response"),
     title="NIDS Classification API"
 )
 

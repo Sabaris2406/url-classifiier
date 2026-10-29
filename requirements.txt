@@ -1,6 +1,5 @@
 gradio
-spaces
 pandas
-xgboost
-scikit-learn
+xgboost==2.1.4
+scikit-learn==1.8.0
 joblib
