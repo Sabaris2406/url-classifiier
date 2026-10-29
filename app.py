@@ -2,7 +2,7 @@ import gradio as gr
 import pandas as pd
 import joblib
 import json
-import spaces
+import os
 
 # Import custom class
 from feature_extraction import NIDSFeaturePreprocessor
@@ -21,19 +21,18 @@ EXPECTED_COLS = [
     'ct_dst_sport_ltm', 'ct_dst_src_ltm'
 ]
 
-@spaces.GPU(duration=30)
 def predict_threat(json_text):
     try:
         flow_data = json.loads(json_text)
         target_url = flow_data.pop('target_url', 'Unknown URL')
-        
+
         df_flow = pd.DataFrame([flow_data])
         df_flow = df_flow[EXPECTED_COLS]
-        
+
         X_infer = preprocessor.transform(df_flow)
         prediction = int(model.predict(X_infer)[0])
         confidence = float(model.predict_proba(X_infer)[0][prediction] * 100)
-        
+
         return {
             "target_url": target_url,
             "status": "Malicious" if prediction == 1 else "Normal",
@@ -51,4 +50,4 @@ demo = gr.Interface(
 )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
